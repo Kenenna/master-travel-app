@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter, WhatsAppBubble, PageHero } from "@/components/site-footer";
+import { AddressAutocomplete, type AddressValue } from "@/components/address-autocomplete";
 import heroCar from "@/assets/hero-car.jpg";
 
 export const Route = createFileRoute("/book")({
@@ -21,6 +22,8 @@ const vehicles = ["Executive Saloon", "Luxury SUV", "Executive People Carrier"];
 
 function BookPage() {
   const [submitted, setSubmitted] = useState(false);
+  const [pickup, setPickup] = useState<AddressValue>({ formatted: "" });
+  const [dropoff, setDropoff] = useState<AddressValue>({ formatted: "" });
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -65,13 +68,30 @@ function BookPage() {
                 <Field label="Pickup time" name="time" type="time" required />
               </div>
 
-              <Field label="Pickup location" name="from" required />
-              <Field label="Destination" name="to" required />
+              <AddressAutocomplete
+                label="Pickup location"
+                name="from"
+                required
+                value={pickup}
+                onChange={setPickup}
+              />
+              <AddressAutocomplete
+                label="Destination"
+                name="to"
+                required
+                value={dropoff}
+                onChange={setDropoff}
+              />
 
               <div>
                 <label className="block text-[0.7rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">Notes</label>
                 <textarea name="notes" rows={4} className="mt-2 w-full rounded border border-input bg-white px-3 py-2 text-sm focus:border-[var(--gold)] focus:outline-none" placeholder="Flight number, passengers, luggage, special requests…" />
               </div>
+
+              <input type="hidden" name="pickup_lat" value={pickup.lat ?? ""} />
+              <input type="hidden" name="pickup_lon" value={pickup.lon ?? ""} />
+              <input type="hidden" name="dropoff_lat" value={dropoff.lat ?? ""} />
+              <input type="hidden" name="dropoff_lon" value={dropoff.lon ?? ""} />
 
               <button type="submit" className="btn-gold w-full">Request Booking</button>
               <p className="text-center text-xs text-muted-foreground">
