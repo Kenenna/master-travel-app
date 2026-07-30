@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
-type GeoapifyFeature = {
-  properties: {
-    formatted: string;
-    lat: number;
-    lon: number;
-    place_id: string;
-  };
+type GeoapifyResult = {
+  formatted: string;
+  lat: number;
+  lon: number;
+  place_id: string;
 };
 
 export type AddressValue = {
@@ -37,7 +35,7 @@ export function AddressAutocomplete({
   onChange,
   country = "ie",
 }: AddressAutocompleteProps) {
-  const [results, setResults] = useState<GeoapifyFeature[]>([]);
+  const [results, setResults] = useState<GeoapifyResult[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,11 +96,11 @@ export function AddressAutocomplete({
     }
   }
 
-  function handleSelect(feature: GeoapifyFeature) {
+  function handleSelect(result: GeoapifyResult) {
     onChange({
-      formatted: feature.properties.formatted,
-      lat: feature.properties.lat,
-      lon: feature.properties.lon,
+      formatted: result.formatted,
+      lat: result.lat,
+      lon: result.lon,
     });
     setResults([]);
     setShowResults(false);
@@ -132,16 +130,16 @@ export function AddressAutocomplete({
       )}
       {showResults && results.length > 0 && (
         <ul className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded border border-input bg-white shadow-md">
-          {results.map((feature) => (
+          {results.map((result) => (
             <li
-              key={feature.properties.place_id}
+              key={result.place_id}
               onMouseDown={(e) => {
                 e.preventDefault();
-                handleSelect(feature);
+                handleSelect(result);
               }}
               className="cursor-pointer px-3 py-2 text-sm hover:bg-muted"
             >
-              {feature.properties.formatted}
+              {result.formatted}
             </li>
           ))}
         </ul>
