@@ -4,6 +4,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter, WhatsAppBubble, PageHero } from "@/components/site-footer";
 import { AddressAutocomplete, type AddressValue } from "@/components/address-autocomplete";
 import heroCar from "@/assets/hero-car.jpg";
+import { submitBooking, type BookingPayload } from "@/utils/booking";
 
 export const Route = createFileRoute("/book")({
   head: () => ({
@@ -127,3 +128,4 @@ function SelectField({ label, name, options }: { label: string; name: string; op
     </div>
   );
 }
+
