@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { Agent } from "undici";
+import { request as httpsRequest } from "node:https";
 
 export type BookingPayload = {
   trip_type: "one-way" | "hourly";
@@ -65,10 +65,6 @@ function assertValidPayload(data: unknown): BookingPayload {
   return d as unknown as BookingPayload;
 }
 
-// CHANGED: quick check for whether a response is actually Cloudflare's bot
-// challenge page rather than a real reply from WordPress, so the fallback
-// logic below can tell "origin IP is stale/blocked" apart from "WordPress
-// itself returned an error".
 function looksLikeCloudflareChallenge(status: number, bodyText: string): boolean {
   if (status !== 403 && status !== 503) return false;
   return (
@@ -78,40 +74,61 @@ function looksLikeCloudflareChallenge(status: number, bodyText: string): boolean
   );
 }
 
-// CHANGED: builds a fetch call that connects directly to the WordPress
-// origin server's IP (bypassing Cloudflare's proxy, which blocks
-// server-to-server requests from cloud IP ranges like Vercel's with a bot
-// challenge) while still sending the correct SNI and Host header so the
-// server's TLS cert and virtual-host routing both resolve correctly.
-async function fetchViaOriginIp(
+// CHANGED: uses node:https directly instead of fetch()/undici's Agent.
+// fetch() implementations vary by runtime (Bun's fetch does not appear to
+// honor undici's `dispatcher` option for connection/SNI overrides), but
+// node:https.request gives explicit, low-level control over exactly which
+// IP the TCP connection targets while independently controlling the TLS
+// SNI (`servername`) and the HTTP `Host` header — this is what actually
+// lets the request reach the origin server directly, bypassing
+// Cloudflare's proxy, regardless of which fetch implementation the
+// current JS runtime ships with.
+function requestViaOriginIp(
   hostname: string,
   originIp: string,
   path: string,
   body: string,
   apiKey: string
-): Promise<Response> {
-  const agent = new Agent({
-    connect: {
-      // Force TLS to present the real hostname for SNI + cert validation,
-      // even though we're dialing the IP directly.
-      servername: hostname,
-    },
-  });
+): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        hostname: originIp,
+        port: 443,
+        path,
+        method: "POST",
+        // TLS SNI: tells the server (and Node's own cert hostname check)
+        // to treat this connection as if it were made to `hostname`, even
+        // though we dialed a raw IP.
+        servername: hostname,
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+          "x-api-key": apiKey,
+          // Without this, the server would route by IP instead of by
+          // mastertravelgroup.com and likely serve the wrong site or 404.
+          Host: hostname,
+        },
+        timeout: 15000,
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => {
+          data += chunk;
+        });
+        res.on("end", () => {
+          resolve({ status: res.statusCode ?? 0, text: data });
+        });
+      }
+    );
 
-  return fetch(`https://${originIp}${path}`, {
-    method: "POST",
-    // @ts-expect-error - dispatcher is an undici/Node fetch extension, not
-    // part of the standard fetch() type signature.
-    dispatcher: agent,
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      // Without this, the server would try to match the virtual host by
-      // the raw IP instead of by mastertravelgroup.com and likely 404 or
-      // hit the wrong site.
-      Host: hostname,
-    },
-    body,
+    req.on("timeout", () => {
+      req.destroy(new Error("Direct-IP request timed out"));
+    });
+    req.on("error", reject);
+
+    req.write(body);
+    req.end();
   });
 }
 
@@ -120,12 +137,6 @@ export const submitBooking = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<BookingResult> => {
     const baseUrl = process.env.WORDPRESS_API_URL;
     const apiKey = process.env.WORDPRESS_API_KEY;
-    // CHANGED: optional — if set, direct-IP requests are tried first,
-    // bypassing Cloudflare's proxy. Get this from cPanel's "Shared IP
-    // Address" field. If it's ever stale, requests simply fall back to the
-    // normal proxied URL below instead of failing outright — but a stale
-    // IP does mean you're back to hitting the Cloudflare challenge until
-    // this value is updated.
     const originIp = process.env.WORDPRESS_ORIGIN_IP;
 
     if (!baseUrl || !apiKey) {
@@ -140,24 +151,20 @@ export const submitBooking = createServerFn({ method: "POST" })
     const path = "/wp-json/mastercabs/v1/bookings";
     const body = JSON.stringify(data);
 
-    // Try the direct-IP path first, if configured.
     if (originIp) {
       try {
-        const res = await fetchViaOriginIp(hostname, originIp, path, body, apiKey);
-        const text = await res.text();
+        const { status, text } = await requestViaOriginIp(hostname, originIp, path, body, apiKey);
 
-        if (res.ok) {
+        if (status >= 200 && status < 300) {
           return JSON.parse(text);
         }
 
-        if (!looksLikeCloudflareChallenge(res.status, text)) {
-          // A real error from WordPress (validation, DB error, etc.) —
-          // don't mask it by silently falling back and retrying.
-          throw new Error(`Booking failed (${res.status}): ${text || "unknown error"}`);
+        if (!looksLikeCloudflareChallenge(status, text)) {
+          throw new Error(`Booking failed (${status}): ${text || "unknown error"}`);
         }
 
         console.warn(
-          "Direct-IP booking request hit a Cloudflare challenge anyway — falling back to proxied URL. The origin IP may be stale."
+          "Direct-IP booking request hit a Cloudflare challenge anyway — falling back to proxied URL. The origin IP may be stale, or this network path is also proxied."
         );
       } catch (err) {
         console.warn(
@@ -167,10 +174,9 @@ export const submitBooking = createServerFn({ method: "POST" })
       }
     }
 
-    // Fallback: normal request through the proxied domain. This is what
-    // ran before, and will still hit Cloudflare's challenge if that's not
-    // yet resolved — but keeps behavior predictable if WORDPRESS_ORIGIN_IP
-    // is unset or stale.
+    // Fallback: normal proxied request. Will hit Cloudflare's challenge if
+    // that's not otherwise resolved, but keeps behavior predictable if
+    // WORDPRESS_ORIGIN_IP is unset, stale, or blocked.
     let res: Response;
     try {
       res = await fetch(`${baseUrl}${path}`, {
