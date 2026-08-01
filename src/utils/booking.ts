@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { Agent } from "undici";
 
 export type BookingPayload = {
   trip_type: "one-way" | "hourly";
@@ -26,11 +27,6 @@ export type BookingResult = {
   total_amount: number;
 };
 
-// CHANGED: the previous validator just cast the input to BookingPayload
-// without checking anything at runtime, so malformed payloads (missing
-// fields, wrong types) would sail through to the WordPress fetch call and
-// surface as an opaque 400/500 from the REST API instead of a clear
-// client-side error. This does a minimal shape check before sending.
 function assertValidPayload(data: unknown): BookingPayload {
   if (typeof data !== "object" || data === null) {
     throw new Error("Booking payload must be an object");
@@ -69,15 +65,69 @@ function assertValidPayload(data: unknown): BookingPayload {
   return d as unknown as BookingPayload;
 }
 
+// CHANGED: quick check for whether a response is actually Cloudflare's bot
+// challenge page rather than a real reply from WordPress, so the fallback
+// logic below can tell "origin IP is stale/blocked" apart from "WordPress
+// itself returned an error".
+function looksLikeCloudflareChallenge(status: number, bodyText: string): boolean {
+  if (status !== 403 && status !== 503) return false;
+  return (
+    bodyText.includes("Just a moment") ||
+    bodyText.includes("cf-mitigated") ||
+    bodyText.includes("challenges.cloudflare.com")
+  );
+}
+
+// CHANGED: builds a fetch call that connects directly to the WordPress
+// origin server's IP (bypassing Cloudflare's proxy, which blocks
+// server-to-server requests from cloud IP ranges like Vercel's with a bot
+// challenge) while still sending the correct SNI and Host header so the
+// server's TLS cert and virtual-host routing both resolve correctly.
+async function fetchViaOriginIp(
+  hostname: string,
+  originIp: string,
+  path: string,
+  body: string,
+  apiKey: string
+): Promise<Response> {
+  const agent = new Agent({
+    connect: {
+      // Force TLS to present the real hostname for SNI + cert validation,
+      // even though we're dialing the IP directly.
+      servername: hostname,
+    },
+  });
+
+  return fetch(`https://${originIp}${path}`, {
+    method: "POST",
+    // @ts-expect-error - dispatcher is an undici/Node fetch extension, not
+    // part of the standard fetch() type signature.
+    dispatcher: agent,
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      // Without this, the server would try to match the virtual host by
+      // the raw IP instead of by mastertravelgroup.com and likely 404 or
+      // hit the wrong site.
+      Host: hostname,
+    },
+    body,
+  });
+}
+
 export const submitBooking = createServerFn({ method: "POST" })
   .validator((data: BookingPayload) => assertValidPayload(data))
   .handler(async ({ data }): Promise<BookingResult> => {
     const baseUrl = process.env.WORDPRESS_API_URL;
     const apiKey = process.env.WORDPRESS_API_KEY;
+    // CHANGED: optional — if set, direct-IP requests are tried first,
+    // bypassing Cloudflare's proxy. Get this from cPanel's "Shared IP
+    // Address" field. If it's ever stale, requests simply fall back to the
+    // normal proxied URL below instead of failing outright — but a stale
+    // IP does mean you're back to hitting the Cloudflare challenge until
+    // this value is updated.
+    const originIp = process.env.WORDPRESS_ORIGIN_IP;
 
-    // CHANGED: log which var is missing (server-side only — never sent to
-    // the client) so a misconfigured deploy is obvious in the platform's
-    // function logs instead of just "one of these two is missing".
     if (!baseUrl || !apiKey) {
       console.error("Booking config error:", {
         WORDPRESS_API_URL: baseUrl ? "set" : "MISSING",
@@ -86,20 +136,52 @@ export const submitBooking = createServerFn({ method: "POST" })
       throw new Error("Server missing WORDPRESS_API_URL or WORDPRESS_API_KEY");
     }
 
+    const hostname = new URL(baseUrl).hostname;
+    const path = "/wp-json/mastercabs/v1/bookings";
+    const body = JSON.stringify(data);
+
+    // Try the direct-IP path first, if configured.
+    if (originIp) {
+      try {
+        const res = await fetchViaOriginIp(hostname, originIp, path, body, apiKey);
+        const text = await res.text();
+
+        if (res.ok) {
+          return JSON.parse(text);
+        }
+
+        if (!looksLikeCloudflareChallenge(res.status, text)) {
+          // A real error from WordPress (validation, DB error, etc.) —
+          // don't mask it by silently falling back and retrying.
+          throw new Error(`Booking failed (${res.status}): ${text || "unknown error"}`);
+        }
+
+        console.warn(
+          "Direct-IP booking request hit a Cloudflare challenge anyway — falling back to proxied URL. The origin IP may be stale."
+        );
+      } catch (err) {
+        console.warn(
+          "Direct-IP booking request failed, falling back to proxied URL:",
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+
+    // Fallback: normal request through the proxied domain. This is what
+    // ran before, and will still hit Cloudflare's challenge if that's not
+    // yet resolved — but keeps behavior predictable if WORDPRESS_ORIGIN_IP
+    // is unset or stale.
     let res: Response;
     try {
-      res = await fetch(`${baseUrl}/wp-json/mastercabs/v1/bookings`, {
+      res = await fetch(`${baseUrl}${path}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
         },
-        body: JSON.stringify(data),
+        body,
       });
     } catch (networkErr) {
-      // CHANGED: distinguish "couldn't reach WordPress at all" (DNS, TLS,
-      // firewall, wrong URL) from "WordPress responded with an error",
-      // since these need different fixes.
       const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
       throw new Error(`Could not reach booking server at ${baseUrl}: ${message}`);
     }
