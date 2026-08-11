@@ -3,16 +3,6 @@ import { request as httpsRequest } from "node:https";
 
 export type BookingPayload = {
   trip_type: "one-way" | "hourly";
-  hourly_hours?: number;
-  is_return_trip?: boolean;
-  return_pickup?: string;
-  return_dropoff?: string;
-  return_date?: string;
-  return_time?: string;
-  return_pickup_lat?: number;
-  return_pickup_lon?: number;
-  return_dropoff_lat?: number;
-  return_dropoff_lon?: number;
   first_name: string;
   last_name: string;
   phone_number: string;
@@ -35,10 +25,6 @@ export type BookingResult = {
   distance: string;
   duration: string;
   total_amount: number;
-  is_return_trip?: number;
-  return_distance?: string;
-  return_duration?: string;
-  return_fare?: number;
 };
 
 function assertValidPayload(data: unknown): BookingPayload {
@@ -76,22 +62,6 @@ function assertValidPayload(data: unknown): BookingPayload {
     throw new Error("adults must be a number >= 1");
   }
 
-  if (d.trip_type === "hourly") {
-    if (typeof d.hourly_hours !== "number" || d.hourly_hours < 2) {
-      throw new Error("hourly_hours must be a number >= 2");
-    }
-  }
-
-  if (d.is_return_trip === true) {
-    const returnStrings = ["return_pickup", "return_dropoff", "return_date", "return_time"];
-    const missingReturn = returnStrings.filter(
-      (key) => typeof d[key] !== "string" || (d[key] as string).trim() === ""
-    );
-    if (missingReturn.length > 0) {
-      throw new Error(`Missing return trip fields: ${missingReturn.join(", ")}`);
-    }
-  }
-
   return d as unknown as BookingPayload;
 }
 
@@ -104,6 +74,15 @@ function looksLikeCloudflareChallenge(status: number, bodyText: string): boolean
   );
 }
 
+// CHANGED: uses node:https directly instead of fetch()/undici's Agent.
+// fetch() implementations vary by runtime (Bun's fetch does not appear to
+// honor undici's `dispatcher` option for connection/SNI overrides), but
+// node:https.request gives explicit, low-level control over exactly which
+// IP the TCP connection targets while independently controlling the TLS
+// SNI (`servername`) and the HTTP `Host` header — this is what actually
+// lets the request reach the origin server directly, bypassing
+// Cloudflare's proxy, regardless of which fetch implementation the
+// current JS runtime ships with.
 function requestViaOriginIp(
   hostname: string,
   originIp: string,
@@ -118,11 +97,16 @@ function requestViaOriginIp(
         port: 443,
         path,
         method: "POST",
+        // TLS SNI: tells the server (and Node's own cert hostname check)
+        // to treat this connection as if it were made to `hostname`, even
+        // though we dialed a raw IP.
         servername: hostname,
         headers: {
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(body),
           "x-api-key": apiKey,
+          // Without this, the server would route by IP instead of by
+          // mastertravelgroup.com and likely serve the wrong site or 404.
           Host: hostname,
         },
         timeout: 15000,
@@ -190,6 +174,9 @@ export const submitBooking = createServerFn({ method: "POST" })
       }
     }
 
+    // Fallback: normal proxied request. Will hit Cloudflare's challenge if
+    // that's not otherwise resolved, but keeps behavior predictable if
+    // WORDPRESS_ORIGIN_IP is unset, stale, or blocked.
     let res: Response;
     try {
       res = await fetch(`${baseUrl}${path}`, {

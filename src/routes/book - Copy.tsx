@@ -6,7 +6,7 @@ import { AddressAutocomplete, type AddressValue } from "@/components/address-aut
 import heroCar from "@/assets/hero-car.jpg";
 import { submitBooking, type BookingPayload } from "@/utils/booking";
 
-export const Route = createFileRoute("/book")({
+export const Route = createFileRoute("/book - Copy")({
   head: () => ({
     meta: [
       { title: "Book A Ride — Master Travel Group" },
@@ -20,7 +20,6 @@ export const Route = createFileRoute("/book")({
 
 const serviceTypes = ["Airport Transfer", "Corporate Travel", "Wedding", "Private Tour", "Luxury Delivery", "Other"];
 const vehicles = ["Executive Saloon", "Luxury SUV", "Executive People Carrier"];
-const hourlyOptions = Array.from({ length: 23 }, (_, i) => `${i + 2} hours`);
 
 function BookPage() {
   const [submitted, setSubmitted] = useState(false);
@@ -29,10 +28,6 @@ function BookPage() {
   const [reference, setReference] = useState("");
   const [pickup, setPickup] = useState<AddressValue>({ formatted: "" });
   const [dropoff, setDropoff] = useState<AddressValue>({ formatted: "" });
-  const [tripType, setTripType] = useState<"one-way" | "hourly">("one-way");
-  const [isReturnTrip, setIsReturnTrip] = useState(false);
-  const [returnPickup, setReturnPickup] = useState<AddressValue>({ formatted: "" });
-  const [returnDropoff, setReturnDropoff] = useState<AddressValue>({ formatted: "" });
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -43,22 +38,12 @@ function BookPage() {
     const formData = new FormData(form);
 
     const payload: BookingPayload = {
-      trip_type: tripType,
-      hourly_hours: tripType === "hourly" ? parseInt(String(formData.get("hourly_hours") || "2")) : undefined,
-      is_return_trip: tripType === "one-way" && isReturnTrip,
-      return_pickup: isReturnTrip ? returnPickup.formatted : "",
-      return_dropoff: isReturnTrip ? returnDropoff.formatted : "",
-      return_date: isReturnTrip ? String(formData.get("return_date") || "") : "",
-      return_time: isReturnTrip ? String(formData.get("return_time") || "") : "",
-      return_pickup_lat: isReturnTrip ? returnPickup.lat : undefined,
-      return_pickup_lon: isReturnTrip ? returnPickup.lon : undefined,
-      return_dropoff_lat: isReturnTrip ? returnDropoff.lat : undefined,
-      return_dropoff_lon: isReturnTrip ? returnDropoff.lon : undefined,
+      trip_type: "one-way",
       first_name: String(formData.get("first_name") || ""),
       last_name: String(formData.get("last_name") || ""),
       phone_number: String(formData.get("phone") || ""),
       email_address: String(formData.get("email") || ""),
-      car_class: tripType === "hourly" ? "Executive" : String(formData.get("vehicle") || ""),
+      car_class: String(formData.get("vehicle") || ""),
       select_date: String(formData.get("date") || ""),
       select_time: String(formData.get("time") || ""),
       pickup_address: pickup.formatted,
@@ -116,35 +101,6 @@ function BookPage() {
                 </div>
               )}
 
-              {/* Trip Type */}
-              <div>
-                <label className="block text-[0.7rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">Trip Type</label>
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setTripType("one-way"); setIsReturnTrip(false); }}
-                    className={`flex-1 rounded border px-4 py-2 text-sm font-medium transition-colors ${
-                      tripType === "one-way"
-                        ? "border-[var(--gold)] bg-[var(--gold)]/10 text-[var(--gold)]"
-                        : "border-input bg-white text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    One Way
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setTripType("hourly"); setIsReturnTrip(false); }}
-                    className={`flex-1 rounded border px-4 py-2 text-sm font-medium transition-colors ${
-                      tripType === "hourly"
-                        ? "border-[var(--gold)] bg-[var(--gold)]/10 text-[var(--gold)]"
-                        : "border-input bg-white text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    Hourly
-                  </button>
-                </div>
-              </div>
-
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="First name" name="first_name" required />
                 <Field label="Last name" name="last_name" required />
@@ -156,11 +112,7 @@ function BookPage() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <SelectField label="Service type" name="service" options={serviceTypes} />
-                {tripType === "one-way" ? (
-                  <SelectField label="Preferred vehicle" name="vehicle" options={vehicles} />
-                ) : (
-                  <SelectField label="Hours" name="hourly_hours" options={hourlyOptions} defaultValue="2 hours" />
-                )}
+                <SelectField label="Preferred vehicle" name="vehicle" options={vehicles} />
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">
@@ -183,50 +135,6 @@ function BookPage() {
                 value={dropoff}
                 onChange={setDropoff}
               />
-
-              {tripType === "one-way" && (
-                <>
-                  <div className="flex items-center gap-2 pt-2">
-                    <input
-                      type="checkbox"
-                      id="return_trip"
-                      name="return_trip"
-                      checked={isReturnTrip}
-                      onChange={(e) => setIsReturnTrip(e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300 text-[var(--gold)] focus:ring-[var(--gold)]"
-                    />
-                    <label htmlFor="return_trip" className="text-sm text-muted-foreground">Add Return Trip</label>
-                  </div>
-
-                  {isReturnTrip && (
-                    <div className="space-y-6 rounded-lg border border-border bg-muted/30 p-6">
-                      <h4 className="text-[0.7rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">Return Journey Details</h4>
-                      <AddressAutocomplete
-                        label="Return Pickup"
-                        name="return_pickup"
-                        required
-                        value={returnPickup}
-                        onChange={setReturnPickup}
-                      />
-                      <AddressAutocomplete
-                        label="Return Destination"
-                        name="return_dropoff"
-                        required
-                        value={returnDropoff}
-                        onChange={setReturnDropoff}
-                      />
-                      <div className="grid gap-4 md:grid-cols-2">
-                        <Field label="Return Date" name="return_date" type="date" required />
-                        <Field label="Return Time" name="return_time" type="time" required />
-                      </div>
-                      <input type="hidden" name="return_pickup_lat" value={returnPickup.lat ?? ""} />
-                      <input type="hidden" name="return_pickup_lon" value={returnPickup.lon ?? ""} />
-                      <input type="hidden" name="return_dropoff_lat" value={returnDropoff.lat ?? ""} />
-                      <input type="hidden" name="return_dropoff_lon" value={returnDropoff.lon ?? ""} />
-                    </div>
-                  )}
-                </>
-              )}
 
               <div>
                 <label className="block text-[0.7rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">Notes</label>
@@ -264,12 +172,12 @@ function Field({ label, name, type = "text", required = false, defaultValue }: {
   );
 }
 
-function SelectField({ label, name, options, defaultValue }: { label: string; name: string; options: string[]; defaultValue?: string }) {
+function SelectField({ label, name, options }: { label: string; name: string; options: string[] }) {
   return (
     <div>
       <label className="block text-[0.7rem] font-medium uppercase tracking-[0.2em] text-muted-foreground">{label}</label>
-      <select name={name} defaultValue={defaultValue} className="mt-2 w-full rounded border border-input bg-white px-3 py-2 text-sm focus:border-[var(--gold)] focus:outline-none">
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      <select name={name} className="mt-2 w-full rounded border border-input bg-white px-3 py-2 text-sm focus:border-[var(--gold)] focus:outline-none">
+        {options.map((o) => <option key={o}>{o}</option>)}
       </select>
     </div>
   );
