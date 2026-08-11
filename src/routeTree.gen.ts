@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SpecialServicesRouteImport } from './routes/special-services'
 import { Route as ServicesRouteImport } from './routes/services'
 import { Route as OurStoryRouteImport } from './routes/our-story'
+import { Route as DriverPortalCopyRouteImport } from './routes/driver-portal - Copy'
 import { Route as DriverPortalRouteImport } from './routes/driver-portal'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as BookCopyRouteImport } from './routes/book - Copy'
@@ -31,6 +32,11 @@ const ServicesRoute = ServicesRouteImport.update({
 const OurStoryRoute = OurStoryRouteImport.update({
   id: '/our-story',
   path: '/our-story',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DriverPortalCopyRoute = DriverPortalCopyRouteImport.update({
+  id: '/driver-portal - Copy',
+  path: '/driver-portal - Copy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DriverPortalRoute = DriverPortalRouteImport.update({
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/book - Copy': typeof BookCopyRoute
   '/contact': typeof ContactRoute
   '/driver-portal': typeof DriverPortalRoute
+  '/driver-portal - Copy': typeof DriverPortalCopyRoute
   '/our-story': typeof OurStoryRoute
   '/services': typeof ServicesRoute
   '/special-services': typeof SpecialServicesRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/book - Copy': typeof BookCopyRoute
   '/contact': typeof ContactRoute
   '/driver-portal': typeof DriverPortalRoute
+  '/driver-portal - Copy': typeof DriverPortalCopyRoute
   '/our-story': typeof OurStoryRoute
   '/services': typeof ServicesRoute
   '/special-services': typeof SpecialServicesRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/book - Copy': typeof BookCopyRoute
   '/contact': typeof ContactRoute
   '/driver-portal': typeof DriverPortalRoute
+  '/driver-portal - Copy': typeof DriverPortalCopyRoute
   '/our-story': typeof OurStoryRoute
   '/services': typeof ServicesRoute
   '/special-services': typeof SpecialServicesRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/book - Copy'
     | '/contact'
     | '/driver-portal'
+    | '/driver-portal - Copy'
     | '/our-story'
     | '/services'
     | '/special-services'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/book - Copy'
     | '/contact'
     | '/driver-portal'
+    | '/driver-portal - Copy'
     | '/our-story'
     | '/services'
     | '/special-services'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/book - Copy'
     | '/contact'
     | '/driver-portal'
+    | '/driver-portal - Copy'
     | '/our-story'
     | '/services'
     | '/special-services'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   BookCopyRoute: typeof BookCopyRoute
   ContactRoute: typeof ContactRoute
   DriverPortalRoute: typeof DriverPortalRoute
+  DriverPortalCopyRoute: typeof DriverPortalCopyRoute
   OurStoryRoute: typeof OurStoryRoute
   ServicesRoute: typeof ServicesRoute
   SpecialServicesRoute: typeof SpecialServicesRoute
@@ -155,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/our-story'
       fullPath: '/our-story'
       preLoaderRoute: typeof OurStoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/driver-portal - Copy': {
+      id: '/driver-portal - Copy'
+      path: '/driver-portal - Copy'
+      fullPath: '/driver-portal - Copy'
+      preLoaderRoute: typeof DriverPortalCopyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/driver-portal': {
@@ -201,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   BookCopyRoute: BookCopyRoute,
   ContactRoute: ContactRoute,
   DriverPortalRoute: DriverPortalRoute,
+  DriverPortalCopyRoute: DriverPortalCopyRoute,
   OurStoryRoute: OurStoryRoute,
   ServicesRoute: ServicesRoute,
   SpecialServicesRoute: SpecialServicesRoute,
