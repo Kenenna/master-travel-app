@@ -7,8 +7,6 @@ function wpUrl(path: string): string {
     .replace(/\/+$/, "")
     .replace(/\/wp-json$/, "");
 
-  // path is "/wp-json/mastercabs/v1/..."
-  // Strip the /wp-json prefix and use the query-string fallback format
   const restPath = path.replace(/^\/wp-json/, "");
   return `${base}/?rest_route=${encodeURIComponent(restPath)}`;
 }

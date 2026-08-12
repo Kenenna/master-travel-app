@@ -24,20 +24,54 @@ const vehicleTypes = [
   { value: "van", label: "Cargo Van" },
 ];
 
+/**
+ * Compress images via canvas before base64 encoding.
+ * PDFs pass through unchanged.
+ */
+function compressImage(file: File, maxWidth = 1200, quality = 0.8): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (file.type === "application/pdf") {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      return;
+    }
+
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject(new Error("Could not compress image"));
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to load image for compression"));
+    };
+    img.src = url;
+  });
+}
+
 function DriverPortal() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loggedIn, setLoggedIn] = useState(false);
-
-  const toBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-    });
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -92,7 +126,7 @@ function DriverPortal() {
         if (!file || file.size === 0) {
           throw new Error(`Please upload ${key.replace(/_/g, " ")}`);
         }
-        base64Files[key] = await toBase64(file);
+        base64Files[key] = await compressImage(file);
       }
 
       const result = await registerDriver({
@@ -169,7 +203,6 @@ function DriverPortal() {
             <span className="gold-divider mx-auto mt-6" />
           </div>
 
-          {/* Tabs */}
           <div className="mt-10 flex gap-2">
             <button
               type="button"
