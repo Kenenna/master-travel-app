@@ -1,14 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 
-// ── URL helper: robust against trailing slashes and accidental /wp-json ──
 function wpUrl(path: string): string {
   let base = (process.env.WORDPRESS_API_URL || "")
     .trim()
-    .replace(/\/+$/, ""); // strip trailing slash(es)
-
-  // If the env var already includes /wp-json, strip it so we don't double it
-  base = base.replace(/\/wp-json$/, "");
-
+    .replace(/\/+$/, "")
+    .replace(/\/wp-json$/, "");
   return `${base}${path}`;
 }
 
@@ -136,7 +132,9 @@ export const registerDriver = createServerFn({ method: "POST" })
     const apiKey = process.env.WORDPRESS_API_KEY;
 
     if (!baseUrl || !apiKey) {
-      throw new Error("Server missing WORDPRESS_API_URL or WORDPRESS_API_KEY");
+      throw new Error(
+        `Server env missing. WORDPRESS_API_URL=${baseUrl ?? "UNDEFINED"}, WORDPRESS_API_KEY=${apiKey ? "SET" : "UNDEFINED"}`
+      );
     }
 
     const url = wpUrl("/wp-json/mastercabs/v1/drivers/register");
@@ -154,15 +152,14 @@ export const registerDriver = createServerFn({ method: "POST" })
       });
     } catch (networkErr) {
       const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
-      throw new Error(`Could not reach server at ${baseUrl}: ${message}`);
+      throw new Error(`Network error reaching ${url}: ${message}`);
     }
 
     const bodyText = await res.text().catch(() => "");
 
     if (!res.ok) {
-      // Include the exact URL in the error so you can see what was actually requested
       throw new Error(
-        `[${url}] ${extractWpErrorMessage(res.status, bodyText, "Registration")}`
+        `URL: ${url} | Status: ${res.status} | Response: ${bodyText.slice(0, 800)}`
       );
     }
 
@@ -176,7 +173,9 @@ export const loginDriver = createServerFn({ method: "POST" })
     const apiKey = process.env.WORDPRESS_API_KEY;
 
     if (!baseUrl || !apiKey) {
-      throw new Error("Server missing WORDPRESS_API_URL or WORDPRESS_API_KEY");
+      throw new Error(
+        `Server env missing. WORDPRESS_API_URL=${baseUrl ?? "UNDEFINED"}, WORDPRESS_API_KEY=${apiKey ? "SET" : "UNDEFINED"}`
+      );
     }
 
     const url = wpUrl("/wp-json/mastercabs/v1/drivers/login");
@@ -194,14 +193,14 @@ export const loginDriver = createServerFn({ method: "POST" })
       });
     } catch (networkErr) {
       const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
-      throw new Error(`Could not reach server at ${baseUrl}: ${message}`);
+      throw new Error(`Network error reaching ${url}: ${message}`);
     }
 
     const bodyText = await res.text().catch(() => "");
 
     if (!res.ok) {
       throw new Error(
-        `[${url}] ${extractWpErrorMessage(res.status, bodyText, "Login")}`
+        `URL: ${url} | Status: ${res.status} | Response: ${bodyText.slice(0, 800)}`
       );
     }
 
