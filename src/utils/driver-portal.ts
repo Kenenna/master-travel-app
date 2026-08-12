@@ -1,5 +1,4 @@
 import { createServerFn } from "@tanstack/react-start";
-import { request as httpsRequest } from "node:https";
 
 export type DriverRegisterPayload = {
   email: string;
@@ -107,15 +106,6 @@ function assertValidLogin(data: unknown): DriverLoginPayload {
   return d as unknown as DriverLoginPayload;
 }
 
-function looksLikeCloudflareChallenge(status: number, bodyText: string): boolean {
-  if (status !== 403 && status !== 503) return false;
-  return (
-    bodyText.includes("Just a moment") ||
-    bodyText.includes("cf-mitigated") ||
-    bodyText.includes("challenges.cloudflare.com")
-  );
-}
-
 /**
  * WP_Error responses from the REST API come back as JSON shaped like:
  *   { "code": "invalid_email", "message": "Please enter a valid email.", "data": { "status": 400 } }
@@ -136,79 +126,17 @@ function extractWpErrorMessage(status: number, bodyText: string, fallbackAction:
   return `${fallbackAction} failed (${status}): ${bodyText}`;
 }
 
-function requestViaOriginIp(
-  hostname: string,
-  originIp: string,
-  path: string,
-  body: string,
-  apiKey: string
-): Promise<{ status: number; text: string }> {
-  return new Promise((resolve, reject) => {
-    const req = httpsRequest(
-      {
-        hostname: originIp,
-        port: 443,
-        path,
-        method: "POST",
-        servername: hostname,
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(body),
-          "x-api-key": apiKey,
-          Host: hostname,
-        },
-        timeout: 15000,
-      },
-      (res) => {
-        let data = "";
-        res.on("data", (chunk) => {
-          data += chunk;
-        });
-        res.on("end", () => {
-          resolve({ status: res.statusCode ?? 0, text: data });
-        });
-      }
-    );
-
-    req.on("timeout", () => {
-      req.destroy(new Error("Direct-IP request timed out"));
-    });
-    req.on("error", reject);
-
-    req.write(body);
-    req.end();
-  });
-}
-
 export const registerDriver = createServerFn({ method: "POST" })
   .validator((data: DriverRegisterPayload) => assertValidRegister(data))
   .handler(async ({ data }): Promise<DriverRegisterResult> => {
     const baseUrl = process.env.WORDPRESS_API_URL;
     const apiKey = process.env.WORDPRESS_API_KEY;
-    const originIp = process.env.WORDPRESS_ORIGIN_IP;
 
     if (!baseUrl || !apiKey) {
       throw new Error("Server missing WORDPRESS_API_URL or WORDPRESS_API_KEY");
     }
 
-    const hostname = new URL(baseUrl).hostname;
     const path = "/wp-json/mastercabs/v1/drivers/register";
-    const body = JSON.stringify(data);
-
-    if (originIp) {
-      try {
-        const { status, text } = await requestViaOriginIp(hostname, originIp, path, body, apiKey);
-        if (status >= 200 && status < 300) {
-          return JSON.parse(text);
-        }
-        if (!looksLikeCloudflareChallenge(status, text)) {
-          throw new Error(extractWpErrorMessage(status, text, "Registration"));
-        }
-        console.warn("Direct-IP registration hit Cloudflare challenge, falling back.");
-      } catch (err) {
-        console.warn("Direct-IP registration failed, falling back:", err instanceof Error ? err.message : err);
-      }
-    }
 
     let res: Response;
     try {
@@ -218,7 +146,7 @@ export const registerDriver = createServerFn({ method: "POST" })
           "Content-Type": "application/json",
           "x-api-key": apiKey,
         },
-        body,
+        body: JSON.stringify(data),
       });
     } catch (networkErr) {
       const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
@@ -238,30 +166,12 @@ export const loginDriver = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<DriverAuthResult> => {
     const baseUrl = process.env.WORDPRESS_API_URL;
     const apiKey = process.env.WORDPRESS_API_KEY;
-    const originIp = process.env.WORDPRESS_ORIGIN_IP;
 
     if (!baseUrl || !apiKey) {
       throw new Error("Server missing WORDPRESS_API_URL or WORDPRESS_API_KEY");
     }
 
-    const hostname = new URL(baseUrl).hostname;
     const path = "/wp-json/mastercabs/v1/drivers/login";
-    const body = JSON.stringify(data);
-
-    if (originIp) {
-      try {
-        const { status, text } = await requestViaOriginIp(hostname, originIp, path, body, apiKey);
-        if (status >= 200 && status < 300) {
-          return JSON.parse(text);
-        }
-        if (!looksLikeCloudflareChallenge(status, text)) {
-          throw new Error(extractWpErrorMessage(status, text, "Login"));
-        }
-        console.warn("Direct-IP login hit Cloudflare challenge, falling back.");
-      } catch (err) {
-        console.warn("Direct-IP login failed, falling back:", err instanceof Error ? err.message : err);
-      }
-    }
 
     let res: Response;
     try {
@@ -271,7 +181,7 @@ export const loginDriver = createServerFn({ method: "POST" })
           "Content-Type": "application/json",
           "x-api-key": apiKey,
         },
-        body,
+        body: JSON.stringify(data),
       });
     } catch (networkErr) {
       const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
