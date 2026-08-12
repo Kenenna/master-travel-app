@@ -1,10 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 
-// ── URL helper: guarantees exactly one slash between base and path ──
+// ── URL helper: robust against trailing slashes and accidental /wp-json ──
 function wpUrl(path: string): string {
-  const base = (process.env.WORDPRESS_API_URL || "")
+  let base = (process.env.WORDPRESS_API_URL || "")
     .trim()
     .replace(/\/+$/, ""); // strip trailing slash(es)
+
+  // If the env var already includes /wp-json, strip it so we don't double it
+  base = base.replace(/\/wp-json$/, "");
+
   return `${base}${path}`;
 }
 
@@ -62,8 +66,6 @@ function assertValidRegister(data: unknown): DriverRegisterPayload {
   }
   const d = data as Record<string, unknown>;
 
-  // These must exactly match the required_files keys and required POST
-  // fields checked in mastercabs_app_driver_register() on the WP side.
   const requiredStrings = [
     "email", "password", "password_confirm", "first_name", "last_name",
     "license", "vehicle_type", "vehicle_model", "vehicle_reg_number",
@@ -114,13 +116,6 @@ function assertValidLogin(data: unknown): DriverLoginPayload {
   return d as unknown as DriverLoginPayload;
 }
 
-/**
- * WP_Error responses from the REST API come back as JSON shaped like:
- *   { "code": "invalid_email", "message": "Please enter a valid email.", "data": { "status": 400 } }
- * Pull the human-readable "message" out of that instead of surfacing the
- * raw JSON blob to the user. Falls back to the raw text if it isn't JSON
- * (e.g. a Cloudflare/proxy HTML error page).
- */
 function extractWpErrorMessage(status: number, bodyText: string, fallbackAction: string): string {
   if (!bodyText) return `${fallbackAction} failed (${status})`;
   try {
@@ -129,7 +124,7 @@ function extractWpErrorMessage(status: number, bodyText: string, fallbackAction:
       return parsed.message;
     }
   } catch {
-    // not JSON — fall through to raw text
+    // not JSON
   }
   return `${fallbackAction} failed (${status}): ${bodyText}`;
 }
@@ -145,7 +140,6 @@ export const registerDriver = createServerFn({ method: "POST" })
     }
 
     const url = wpUrl("/wp-json/mastercabs/v1/drivers/register");
-    console.log("[registerDriver] POST →", url);
 
     let res: Response;
     try {
@@ -153,6 +147,7 @@ export const registerDriver = createServerFn({ method: "POST" })
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Accept": "application/json",
           "x-api-key": apiKey,
         },
         body: JSON.stringify(data),
@@ -162,14 +157,16 @@ export const registerDriver = createServerFn({ method: "POST" })
       throw new Error(`Could not reach server at ${baseUrl}: ${message}`);
     }
 
-    const errorText = await res.text().catch(() => "");
-    console.log("[registerDriver] status:", res.status, "body:", errorText.slice(0, 500));
+    const bodyText = await res.text().catch(() => "");
 
     if (!res.ok) {
-      throw new Error(extractWpErrorMessage(res.status, errorText, "Registration"));
+      // Include the exact URL in the error so you can see what was actually requested
+      throw new Error(
+        `[${url}] ${extractWpErrorMessage(res.status, bodyText, "Registration")}`
+      );
     }
 
-    return JSON.parse(errorText);
+    return JSON.parse(bodyText);
   });
 
 export const loginDriver = createServerFn({ method: "POST" })
@@ -183,7 +180,6 @@ export const loginDriver = createServerFn({ method: "POST" })
     }
 
     const url = wpUrl("/wp-json/mastercabs/v1/drivers/login");
-    console.log("[loginDriver] POST →", url);
 
     let res: Response;
     try {
@@ -191,6 +187,7 @@ export const loginDriver = createServerFn({ method: "POST" })
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Accept": "application/json",
           "x-api-key": apiKey,
         },
         body: JSON.stringify(data),
@@ -200,12 +197,13 @@ export const loginDriver = createServerFn({ method: "POST" })
       throw new Error(`Could not reach server at ${baseUrl}: ${message}`);
     }
 
-    const errorText = await res.text().catch(() => "");
-    console.log("[loginDriver] status:", res.status, "body:", errorText.slice(0, 500));
+    const bodyText = await res.text().catch(() => "");
 
     if (!res.ok) {
-      throw new Error(extractWpErrorMessage(res.status, errorText, "Login"));
+      throw new Error(
+        `[${url}] ${extractWpErrorMessage(res.status, bodyText, "Login")}`
+      );
     }
 
-    return JSON.parse(errorText);
+    return JSON.parse(bodyText);
   });
