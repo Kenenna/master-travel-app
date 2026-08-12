@@ -1,11 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 
+// ── URL helper: uses ?rest_route= to bypass /wp-json/ rewrite issues ──
 function wpUrl(path: string): string {
   let base = (process.env.WORDPRESS_API_URL || "")
     .trim()
     .replace(/\/+$/, "")
     .replace(/\/wp-json$/, "");
-  return `${base}${path}`;
+
+  // path is "/wp-json/mastercabs/v1/..."
+  // Strip the /wp-json prefix and use the query-string fallback format
+  const restPath = path.replace(/^\/wp-json/, "");
+  return `${base}/?rest_route=${encodeURIComponent(restPath)}`;
 }
 
 export type DriverRegisterPayload = {
