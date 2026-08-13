@@ -59,6 +59,23 @@ export type DriverAuthResult = {
   };
 };
 
+export type DriverProfile = {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  status: string;
+  license_number: string;
+  vehicle_type: string;
+  vehicle_model: string;
+  vehicle_reg_number: string;
+  year_of_manufacture: number;
+  years_experience: number;
+  driver_phone: string;
+  driver_address: string;
+  member_since: string;
+};
+
 function assertValidRegister(data: unknown): DriverRegisterPayload {
   if (typeof data !== "object" || data === null) {
     throw new Error("Registration payload must be an object");
@@ -207,5 +224,104 @@ export const loginDriver = createServerFn({ method: "POST" })
       );
     }
 
+    return JSON.parse(bodyText);
+  });
+
+export const forgotPasswordDriver = createServerFn({ method: "POST" })
+  .validator((data: { email: string; reset_url?: string }) => {
+    if (!data.email || typeof data.email !== "string" || !data.email.includes("@")) {
+      throw new Error("Valid email is required");
+    }
+    return data;
+  })
+  .handler(async ({ data }): Promise<{ success: boolean; message: string }> => {
+    const apiKey = process.env.WORDPRESS_API_KEY;
+    if (!apiKey) throw new Error("Server missing WORDPRESS_API_KEY");
+
+    const url = wpUrl("/wp-json/mastercabs/v1/drivers/forgot-password");
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "x-api-key": apiKey,
+        },
+        body: JSON.stringify(data),
+      });
+    } catch (networkErr) {
+      const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
+      throw new Error(`Network error: ${message}`);
+    }
+
+    const bodyText = await res.text().catch(() => "");
+    if (!res.ok) throw new Error(extractWpErrorMessage(res.status, bodyText, "Forgot password"));
+    return JSON.parse(bodyText);
+  });
+
+export const resetPasswordDriver = createServerFn({ method: "POST" })
+  .validator((data: { reset_token: string; password: string; password_confirm: string }) => {
+    if (!data.reset_token) throw new Error("Reset token is required");
+    if (!data.password || data.password.length < 8) throw new Error("Password must be at least 8 characters");
+    if (data.password !== data.password_confirm) throw new Error("Passwords do not match");
+    return data;
+  })
+  .handler(async ({ data }): Promise<{ success: boolean; message: string }> => {
+    const apiKey = process.env.WORDPRESS_API_KEY;
+    if (!apiKey) throw new Error("Server missing WORDPRESS_API_KEY");
+
+    const url = wpUrl("/wp-json/mastercabs/v1/drivers/reset-password");
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "x-api-key": apiKey,
+        },
+        body: JSON.stringify(data),
+      });
+    } catch (networkErr) {
+      const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
+      throw new Error(`Network error: ${message}`);
+    }
+
+    const bodyText = await res.text().catch(() => "");
+    if (!res.ok) throw new Error(extractWpErrorMessage(res.status, bodyText, "Reset password"));
+    return JSON.parse(bodyText);
+  });
+
+export const getDriverProfile = createServerFn({ method: "POST" })
+  .validator((data: { token: string }) => {
+    if (!data.token || typeof data.token !== "string") {
+      throw new Error("Token is required");
+    }
+    return data;
+  })
+  .handler(async ({ data }): Promise<DriverProfile> => {
+    const apiKey = process.env.WORDPRESS_API_KEY;
+    if (!apiKey) throw new Error("Server missing WORDPRESS_API_KEY");
+
+    const url = wpUrl("/wp-json/mastercabs/v1/drivers/me");
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "x-api-key": apiKey,
+        },
+        body: JSON.stringify({ token: data.token }),
+      });
+    } catch (networkErr) {
+      const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
+      throw new Error(`Network error: ${message}`);
+    }
+
+    const bodyText = await res.text().catch(() => "");
+    if (!res.ok) throw new Error(extractWpErrorMessage(res.status, bodyText, "Fetch profile"));
     return JSON.parse(bodyText);
   });

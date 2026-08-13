@@ -14,6 +14,7 @@ import { Route as ServicesRouteImport } from './routes/services'
 import { Route as OurStoryRouteImport } from './routes/our-story'
 import { Route as DriverPortalCopyRouteImport } from './routes/driver-portal - Copy'
 import { Route as DriverPortalRouteImport } from './routes/driver-portal'
+import { Route as DriverDashboardRouteImport } from './routes/driver-dashboard'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as BookCopyRouteImport } from './routes/book - Copy'
 import { Route as BookRouteImport } from './routes/book'
@@ -44,6 +45,11 @@ const DriverPortalRoute = DriverPortalRouteImport.update({
   path: '/driver-portal',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DriverDashboardRoute = DriverDashboardRouteImport.update({
+  id: '/driver-dashboard',
+  path: '/driver-dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ContactRoute = ContactRouteImport.update({
   id: '/contact',
   path: '/contact',
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/book': typeof BookRoute
   '/book - Copy': typeof BookCopyRoute
   '/contact': typeof ContactRoute
+  '/driver-dashboard': typeof DriverDashboardRoute
   '/driver-portal': typeof DriverPortalRoute
   '/driver-portal - Copy': typeof DriverPortalCopyRoute
   '/our-story': typeof OurStoryRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/book': typeof BookRoute
   '/book - Copy': typeof BookCopyRoute
   '/contact': typeof ContactRoute
+  '/driver-dashboard': typeof DriverDashboardRoute
   '/driver-portal': typeof DriverPortalRoute
   '/driver-portal - Copy': typeof DriverPortalCopyRoute
   '/our-story': typeof OurStoryRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/book': typeof BookRoute
   '/book - Copy': typeof BookCopyRoute
   '/contact': typeof ContactRoute
+  '/driver-dashboard': typeof DriverDashboardRoute
   '/driver-portal': typeof DriverPortalRoute
   '/driver-portal - Copy': typeof DriverPortalCopyRoute
   '/our-story': typeof OurStoryRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/book'
     | '/book - Copy'
     | '/contact'
+    | '/driver-dashboard'
     | '/driver-portal'
     | '/driver-portal - Copy'
     | '/our-story'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/book'
     | '/book - Copy'
     | '/contact'
+    | '/driver-dashboard'
     | '/driver-portal'
     | '/driver-portal - Copy'
     | '/our-story'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/book'
     | '/book - Copy'
     | '/contact'
+    | '/driver-dashboard'
     | '/driver-portal'
     | '/driver-portal - Copy'
     | '/our-story'
@@ -140,6 +152,7 @@ export interface RootRouteChildren {
   BookRoute: typeof BookRoute
   BookCopyRoute: typeof BookCopyRoute
   ContactRoute: typeof ContactRoute
+  DriverDashboardRoute: typeof DriverDashboardRoute
   DriverPortalRoute: typeof DriverPortalRoute
   DriverPortalCopyRoute: typeof DriverPortalCopyRoute
   OurStoryRoute: typeof OurStoryRoute
@@ -184,6 +197,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DriverPortalRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/driver-dashboard': {
+      id: '/driver-dashboard'
+      path: '/driver-dashboard'
+      fullPath: '/driver-dashboard'
+      preLoaderRoute: typeof DriverDashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/contact': {
       id: '/contact'
       path: '/contact'
@@ -220,6 +240,7 @@ const rootRouteChildren: RootRouteChildren = {
   BookRoute: BookRoute,
   BookCopyRoute: BookCopyRoute,
   ContactRoute: ContactRoute,
+  DriverDashboardRoute: DriverDashboardRoute,
   DriverPortalRoute: DriverPortalRoute,
   DriverPortalCopyRoute: DriverPortalCopyRoute,
   OurStoryRoute: OurStoryRoute,

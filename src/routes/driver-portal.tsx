@@ -1,8 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate, useLocation } from "@tanstack/react-router";
 import { useState } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter, WhatsAppBubble } from "@/components/site-footer";
-import { registerDriver, loginDriver } from "@/utils/driver-portal";
+import { registerDriver, loginDriver, forgotPasswordDriver, resetPasswordDriver } from "@/utils/driver-portal";
 
 export const Route = createFileRoute("/driver-portal")({
   head: () => ({
@@ -67,11 +67,21 @@ function compressImage(file: File, maxWidth = 1200, quality = 0.8): Promise<stri
 }
 
 function DriverPortal() {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const [mode, setMode] = useState<"login" | "register" | "forgot" | "reset">(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("reset") ? "reset" : "login";
+  });
+  const [resetToken] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("reset") || "";
+  });
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [loggedIn, setLoggedIn] = useState(false);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -90,7 +100,7 @@ function DriverPortal() {
       });
       localStorage.setItem("driver_token", result.token);
       localStorage.setItem("driver", JSON.stringify(result.driver));
-      setLoggedIn(true);
+      navigate({ to: "/driver-dashboard" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -158,37 +168,56 @@ function DriverPortal() {
     }
   };
 
-  if (loggedIn) {
-    return (
-      <div className="min-h-screen bg-[var(--ink)] text-white">
-        <SiteHeader />
-        <section className="flex min-h-[calc(100vh-96px)] items-center justify-center px-6 py-20">
-          <div className="w-full max-w-md text-center">
-            <span className="text-[0.7rem] font-medium uppercase tracking-[0.3em]" style={{ color: "var(--gold)" }}>
-              Welcome Back
-            </span>
-            <h1 className="mt-4 font-serif text-3xl">Driver Dashboard</h1>
-            <span className="gold-divider mx-auto mt-6" />
-            <p className="mt-6 text-white/70">
-              You are signed in. The driver dashboard will be available here soon.
-            </p>
-            <button
-              onClick={() => {
-                localStorage.removeItem("driver_token");
-                localStorage.removeItem("driver");
-                setLoggedIn(false);
-              }}
-              className="btn-gold mt-8"
-            >
-              Sign Out
-            </button>
-          </div>
-        </section>
-        <SiteFooter />
-        <WhatsAppBubble />
-      </div>
-    );
-  }
+  const handleForgot = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    setSubmitting(true);
+
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      const result = await forgotPasswordDriver({
+        data: {
+          email: String(formData.get("email") || ""),
+          reset_url: `${window.location.origin}/driver-portal?reset=`,
+        },
+      });
+      setSuccess(result.message);
+      form.reset();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReset = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    setSubmitting(true);
+
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+
+    try {
+      const result = await resetPasswordDriver({
+        data: {
+          reset_token: resetToken,
+          password: String(formData.get("password") || ""),
+          password_confirm: String(formData.get("password_confirm") || ""),
+        },
+      });
+      setSuccess(result.message);
+      setMode("login");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[var(--ink)] text-white">
@@ -203,30 +232,33 @@ function DriverPortal() {
             <span className="gold-divider mx-auto mt-6" />
           </div>
 
-          <div className="mt-10 flex gap-2">
-            <button
-              type="button"
-              onClick={() => { setMode("login"); setError(null); setSuccess(null); }}
-              className={`flex-1 rounded border px-4 py-2 text-sm font-medium transition-colors ${
-                mode === "login"
-                  ? "border-[var(--gold)] bg-[var(--gold)]/10 text-[var(--gold)]"
-                  : "border-white/20 bg-transparent text-white/60 hover:bg-white/5"
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode("register"); setError(null); setSuccess(null); }}
-              className={`flex-1 rounded border px-4 py-2 text-sm font-medium transition-colors ${
-                mode === "register"
-                  ? "border-[var(--gold)] bg-[var(--gold)]/10 text-[var(--gold)]"
-                  : "border-white/20 bg-transparent text-white/60 hover:bg-white/5"
-              }`}
-            >
-              Apply to Drive
-            </button>
-          </div>
+          {/* Tabs */}
+          {mode !== "reset" && (
+            <div className="mt-10 flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setMode("login"); setError(null); setSuccess(null); }}
+                className={`flex-1 rounded border px-4 py-2 text-sm font-medium transition-colors ${
+                  mode === "login"
+                    ? "border-[var(--gold)] bg-[var(--gold)]/10 text-[var(--gold)]"
+                    : "border-white/20 bg-transparent text-white/60 hover:bg-white/5"
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMode("register"); setError(null); setSuccess(null); }}
+                className={`flex-1 rounded border px-4 py-2 text-sm font-medium transition-colors ${
+                  mode === "register"
+                    ? "border-[var(--gold)] bg-[var(--gold)]/10 text-[var(--gold)]"
+                    : "border-white/20 bg-transparent text-white/60 hover:bg-white/5"
+                }`}
+              >
+                Apply to Drive
+              </button>
+            </div>
+          )}
 
           {error && (
             <div className="mt-6 rounded border border-red-400/50 bg-red-500/10 p-3 text-sm text-red-200">
@@ -239,7 +271,7 @@ function DriverPortal() {
             </div>
           )}
 
-          {mode === "login" ? (
+          {mode === "login" && (
             <form onSubmit={handleLogin} className="mt-6 space-y-5 rounded-lg border border-white/15 bg-white/5 p-8">
               <div>
                 <label className="block text-[0.65rem] font-medium uppercase tracking-[0.25em] text-white/60">Email</label>
@@ -252,8 +284,68 @@ function DriverPortal() {
               <button type="submit" disabled={submitting} className="btn-gold w-full disabled:opacity-50">
                 {submitting ? "Signing in…" : "Sign In"}
               </button>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => { setMode("forgot"); setError(null); setSuccess(null); }}
+                  className="text-xs text-white/60 underline transition-colors hover:text-[var(--gold)]"
+                >
+                  Forgot your password?
+                </button>
+              </div>
             </form>
-          ) : (
+          )}
+
+          {mode === "forgot" && (
+            <form onSubmit={handleForgot} className="mt-6 space-y-5 rounded-lg border border-white/15 bg-white/5 p-8">
+              <h3 className="text-lg font-semibold text-white/90">Reset Password</h3>
+              <p className="text-sm text-white/60">Enter your email and we will send you a link to reset your password.</p>
+              <div>
+                <label className="block text-[0.65rem] font-medium uppercase tracking-[0.25em] text-white/60">Email</label>
+                <input required type="email" name="email" className="mt-2 w-full rounded border border-white/20 bg-transparent px-3 py-2 text-sm text-white placeholder-white/40 focus:border-[var(--gold)] focus:outline-none" />
+              </div>
+              <button type="submit" disabled={submitting} className="btn-gold w-full disabled:opacity-50">
+                {submitting ? "Sending…" : "Send Reset Link"}
+              </button>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => { setMode("login"); setError(null); setSuccess(null); }}
+                  className="text-xs text-white/60 underline transition-colors hover:text-[var(--gold)]"
+                >
+                  ← Back to login
+                </button>
+              </div>
+            </form>
+          )}
+
+          {mode === "reset" && (
+            <form onSubmit={handleReset} className="mt-6 space-y-5 rounded-lg border border-white/15 bg-white/5 p-8">
+              <h3 className="text-lg font-semibold text-white/90">Set New Password</h3>
+              <div>
+                <label className="block text-[0.65rem] font-medium uppercase tracking-[0.25em] text-white/60">New Password</label>
+                <input required type="password" name="password" minLength={8} className="mt-2 w-full rounded border border-white/20 bg-transparent px-3 py-2 text-sm text-white placeholder-white/40 focus:border-[var(--gold)] focus:outline-none" />
+              </div>
+              <div>
+                <label className="block text-[0.65rem] font-medium uppercase tracking-[0.25em] text-white/60">Confirm Password</label>
+                <input required type="password" name="password_confirm" minLength={8} className="mt-2 w-full rounded border border-white/20 bg-transparent px-3 py-2 text-sm text-white placeholder-white/40 focus:border-[var(--gold)] focus:outline-none" />
+              </div>
+              <button type="submit" disabled={submitting} className="btn-gold w-full disabled:opacity-50">
+                {submitting ? "Updating…" : "Update Password"}
+              </button>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => { setMode("login"); setError(null); setSuccess(null); }}
+                  className="text-xs text-white/60 underline transition-colors hover:text-[var(--gold)]"
+                >
+                  ← Back to login
+                </button>
+              </div>
+            </form>
+          )}
+
+          {mode === "register" && (
             <form onSubmit={handleRegister} className="mt-6 space-y-6 rounded-lg border border-white/15 bg-white/5 p-8">
               <h3 className="text-lg font-semibold text-white/90">Personal Information</h3>
               <div className="grid gap-4 md:grid-cols-2">
