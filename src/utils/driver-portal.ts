@@ -1,14 +1,127 @@
 import { createServerFn } from "@tanstack/react-start";
+import { request as httpsRequest } from "node:https";
 
-// ── URL helper: uses ?rest_route= to bypass /wp-json/ rewrite issues ──
-function wpUrl(path: string): string {
-  let base = (process.env.WORDPRESS_API_URL || "")
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\/wp-json$/, "");
-
+// ── path helper: builds the ?rest_route= path (used for both direct-IP and proxied requests) ──
+function wpRestPath(path: string): string {
   const restPath = path.replace(/^\/wp-json/, "");
-  return `${base}/?rest_route=${encodeURIComponent(restPath)}`;
+  return `/?rest_route=${encodeURIComponent(restPath)}`;
+}
+
+function looksLikeCloudflareChallenge(status: number, bodyText: string): boolean {
+  if (status !== 403 && status !== 503) return false;
+  return (
+    bodyText.includes("Just a moment") ||
+    bodyText.includes("cf-mitigated") ||
+    bodyText.includes("challenges.cloudflare.com")
+  );
+}
+
+function requestViaOriginIp(
+  hostname: string,
+  originIp: string,
+  path: string,
+  body: string,
+  apiKey: string
+): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        hostname: originIp,
+        port: 443,
+        path,
+        method: "POST",
+        servername: hostname,
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+          "x-api-key": apiKey,
+          Host: hostname,
+        },
+        timeout: 15000,
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => {
+          data += chunk;
+        });
+        res.on("end", () => {
+          resolve({ status: res.statusCode ?? 0, text: data });
+        });
+      }
+    );
+
+    req.on("timeout", () => {
+      req.destroy(new Error("Direct-IP request timed out"));
+    });
+    req.on("error", reject);
+
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── Shared request runner: tries origin IP first, falls back to proxied URL ──
+async function wpPost(restPath: string, payload: unknown, fallbackAction: string): Promise<string> {
+  const baseUrl = process.env.WORDPRESS_API_URL;
+  const apiKey = process.env.WORDPRESS_API_KEY;
+  const originIp = process.env.WORDPRESS_ORIGIN_IP;
+
+  if (!baseUrl || !apiKey) {
+    throw new Error(
+      `Server env missing. WORDPRESS_API_URL=${baseUrl ?? "UNDEFINED"}, WORDPRESS_API_KEY=${apiKey ? "SET" : "UNDEFINED"}`
+    );
+  }
+
+  const hostname = new URL(baseUrl.replace(/\/wp-json$/, "")).hostname;
+  const path = wpRestPath(restPath);
+  const body = JSON.stringify(payload);
+
+  if (originIp) {
+    try {
+      const { status, text } = await requestViaOriginIp(hostname, originIp, path, body, apiKey);
+
+      if (status >= 200 && status < 300) {
+        return text;
+      }
+
+      if (!looksLikeCloudflareChallenge(status, text)) {
+        throw new Error(`${fallbackAction} failed (${status}): ${text || "unknown error"}`);
+      }
+
+      console.warn(
+        `Direct-IP ${fallbackAction} request hit a Cloudflare challenge anyway — falling back to proxied URL.`
+      );
+    } catch (err) {
+      console.warn(
+        `Direct-IP ${fallbackAction} request failed, falling back to proxied URL:`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  const url = `${baseUrl.replace(/\/+$/, "").replace(/\/wp-json$/, "")}${path}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "x-api-key": apiKey,
+      },
+      body,
+    });
+  } catch (networkErr) {
+    const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
+    throw new Error(`Network error reaching ${url}: ${message}`);
+  }
+
+  const bodyText = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new Error(`URL: ${url} | Status: ${res.status} | Response: ${bodyText.slice(0, 800)}`);
+  }
+  return bodyText;
 }
 
 export type DriverRegisterPayload = {
@@ -132,98 +245,17 @@ function assertValidLogin(data: unknown): DriverLoginPayload {
   return d as unknown as DriverLoginPayload;
 }
 
-function extractWpErrorMessage(status: number, bodyText: string, fallbackAction: string): string {
-  if (!bodyText) return `${fallbackAction} failed (${status})`;
-  try {
-    const parsed = JSON.parse(bodyText);
-    if (parsed && typeof parsed.message === "string" && parsed.message.trim() !== "") {
-      return parsed.message;
-    }
-  } catch {
-    // not JSON
-  }
-  return `${fallbackAction} failed (${status}): ${bodyText}`;
-}
-
 export const registerDriver = createServerFn({ method: "POST" })
   .validator((data: DriverRegisterPayload) => assertValidRegister(data))
   .handler(async ({ data }): Promise<DriverRegisterResult> => {
-    const baseUrl = process.env.WORDPRESS_API_URL;
-    const apiKey = process.env.WORDPRESS_API_KEY;
-
-    if (!baseUrl || !apiKey) {
-      throw new Error(
-        `Server env missing. WORDPRESS_API_URL=${baseUrl ?? "UNDEFINED"}, WORDPRESS_API_KEY=${apiKey ? "SET" : "UNDEFINED"}`
-      );
-    }
-
-    const url = wpUrl("/wp-json/mastercabs/v1/drivers/register");
-
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify(data),
-      });
-    } catch (networkErr) {
-      const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
-      throw new Error(`Network error reaching ${url}: ${message}`);
-    }
-
-    const bodyText = await res.text().catch(() => "");
-
-    if (!res.ok) {
-      throw new Error(
-        `URL: ${url} | Status: ${res.status} | Response: ${bodyText.slice(0, 800)}`
-      );
-    }
-
+    const bodyText = await wpPost("/wp-json/mastercabs/v1/drivers/register", data, "Registration");
     return JSON.parse(bodyText);
   });
 
 export const loginDriver = createServerFn({ method: "POST" })
   .validator((data: DriverLoginPayload) => assertValidLogin(data))
   .handler(async ({ data }): Promise<DriverAuthResult> => {
-    const baseUrl = process.env.WORDPRESS_API_URL;
-    const apiKey = process.env.WORDPRESS_API_KEY;
-
-    if (!baseUrl || !apiKey) {
-      throw new Error(
-        `Server env missing. WORDPRESS_API_URL=${baseUrl ?? "UNDEFINED"}, WORDPRESS_API_KEY=${apiKey ? "SET" : "UNDEFINED"}`
-      );
-    }
-
-    const url = wpUrl("/wp-json/mastercabs/v1/drivers/login");
-
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify(data),
-      });
-    } catch (networkErr) {
-      const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
-      throw new Error(`Network error reaching ${url}: ${message}`);
-    }
-
-    const bodyText = await res.text().catch(() => "");
-
-    if (!res.ok) {
-      throw new Error(
-        `URL: ${url} | Status: ${res.status} | Response: ${bodyText.slice(0, 800)}`
-      );
-    }
-
+    const bodyText = await wpPost("/wp-json/mastercabs/v1/drivers/login", data, "Login");
     return JSON.parse(bodyText);
   });
 
@@ -235,28 +267,7 @@ export const forgotPasswordDriver = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }): Promise<{ success: boolean; message: string }> => {
-    const apiKey = process.env.WORDPRESS_API_KEY;
-    if (!apiKey) throw new Error("Server missing WORDPRESS_API_KEY");
-
-    const url = wpUrl("/wp-json/mastercabs/v1/drivers/forgot-password");
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify(data),
-      });
-    } catch (networkErr) {
-      const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
-      throw new Error(`Network error: ${message}`);
-    }
-
-    const bodyText = await res.text().catch(() => "");
-    if (!res.ok) throw new Error(extractWpErrorMessage(res.status, bodyText, "Forgot password"));
+    const bodyText = await wpPost("/wp-json/mastercabs/v1/drivers/forgot-password", data, "Forgot password");
     return JSON.parse(bodyText);
   });
 
@@ -268,28 +279,7 @@ export const resetPasswordDriver = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }): Promise<{ success: boolean; message: string }> => {
-    const apiKey = process.env.WORDPRESS_API_KEY;
-    if (!apiKey) throw new Error("Server missing WORDPRESS_API_KEY");
-
-    const url = wpUrl("/wp-json/mastercabs/v1/drivers/reset-password");
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify(data),
-      });
-    } catch (networkErr) {
-      const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
-      throw new Error(`Network error: ${message}`);
-    }
-
-    const bodyText = await res.text().catch(() => "");
-    if (!res.ok) throw new Error(extractWpErrorMessage(res.status, bodyText, "Reset password"));
+    const bodyText = await wpPost("/wp-json/mastercabs/v1/drivers/reset-password", data, "Reset password");
     return JSON.parse(bodyText);
   });
 
@@ -301,27 +291,6 @@ export const getDriverProfile = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }): Promise<DriverProfile> => {
-    const apiKey = process.env.WORDPRESS_API_KEY;
-    if (!apiKey) throw new Error("Server missing WORDPRESS_API_KEY");
-
-    const url = wpUrl("/wp-json/mastercabs/v1/drivers/me");
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "x-api-key": apiKey,
-        },
-        body: JSON.stringify({ token: data.token }),
-      });
-    } catch (networkErr) {
-      const message = networkErr instanceof Error ? networkErr.message : String(networkErr);
-      throw new Error(`Network error: ${message}`);
-    }
-
-    const bodyText = await res.text().catch(() => "");
-    if (!res.ok) throw new Error(extractWpErrorMessage(res.status, bodyText, "Fetch profile"));
+    const bodyText = await wpPost("/wp-json/mastercabs/v1/drivers/me", { token: data.token }, "Fetch profile");
     return JSON.parse(bodyText);
   });
