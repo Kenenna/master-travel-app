@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ViewTripsRouteImport } from './routes/view-trips'
 import { Route as SpecialServicesRouteImport } from './routes/special-services'
 import { Route as ServicesRouteImport } from './routes/services'
 import { Route as OurStoryRouteImport } from './routes/our-story'
@@ -20,6 +21,11 @@ import { Route as BookCopyRouteImport } from './routes/book - Copy'
 import { Route as BookRouteImport } from './routes/book'
 import { Route as IndexRouteImport } from './routes/index'
 
+const ViewTripsRoute = ViewTripsRouteImport.update({
+  id: '/view-trips',
+  path: '/view-trips',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SpecialServicesRoute = SpecialServicesRouteImport.update({
   id: '/special-services',
   path: '/special-services',
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/our-story': typeof OurStoryRoute
   '/services': typeof ServicesRoute
   '/special-services': typeof SpecialServicesRoute
+  '/view-trips': typeof ViewTripsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/our-story': typeof OurStoryRoute
   '/services': typeof ServicesRoute
   '/special-services': typeof SpecialServicesRoute
+  '/view-trips': typeof ViewTripsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -107,6 +115,7 @@ export interface FileRoutesById {
   '/our-story': typeof OurStoryRoute
   '/services': typeof ServicesRoute
   '/special-services': typeof SpecialServicesRoute
+  '/view-trips': typeof ViewTripsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
     | '/our-story'
     | '/services'
     | '/special-services'
+    | '/view-trips'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -133,6 +143,7 @@ export interface FileRouteTypes {
     | '/our-story'
     | '/services'
     | '/special-services'
+    | '/view-trips'
   id:
     | '__root__'
     | '/'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/our-story'
     | '/services'
     | '/special-services'
+    | '/view-trips'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -158,10 +170,18 @@ export interface RootRouteChildren {
   OurStoryRoute: typeof OurStoryRoute
   ServicesRoute: typeof ServicesRoute
   SpecialServicesRoute: typeof SpecialServicesRoute
+  ViewTripsRoute: typeof ViewTripsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/view-trips': {
+      id: '/view-trips'
+      path: '/view-trips'
+      fullPath: '/view-trips'
+      preLoaderRoute: typeof ViewTripsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/special-services': {
       id: '/special-services'
       path: '/special-services'
@@ -246,6 +266,7 @@ const rootRouteChildren: RootRouteChildren = {
   OurStoryRoute: OurStoryRoute,
   ServicesRoute: ServicesRoute,
   SpecialServicesRoute: SpecialServicesRoute,
+  ViewTripsRoute: ViewTripsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
