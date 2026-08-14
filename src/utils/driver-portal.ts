@@ -294,3 +294,60 @@ export const getDriverProfile = createServerFn({ method: "POST" })
     const bodyText = await wpPost("/wp-json/mastercabs/v1/drivers/me", { token: data.token }, "Fetch profile");
     return JSON.parse(bodyText);
   });
+  
+  
+  export type DriverBooking = {
+  id: number;
+  booking_reference: string;
+  trip_type: string;
+  pickup_address: string;
+  dropoff_address: string;
+  car_class: string;
+  select_date: string;
+  select_time: string;
+  is_return_trip: string;
+  return_pickup: string | null;
+  return_dropoff: string | null;
+  return_date: string | null;
+  return_time: string | null;
+  booking_for: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  phone_number: string | null;
+  adults: number | null;
+  big_luggage: number | null;
+  small_luggage: number | null;
+  notes: string | null;
+  total_amount: string;
+  is_taken: string;
+  driver_id: number | null;
+  created_at: string;
+};
+
+export type DriverBookingsResult = {
+  bookings: DriverBooking[];
+  current_driver_id: number;
+};
+
+export const getDriverBookings = createServerFn({ method: "POST" })
+  .validator((data: { token: string }) => {
+    if (!data.token || typeof data.token !== "string") {
+      throw new Error("Token is required");
+    }
+    return data;
+  })
+  .handler(async ({ data }): Promise<DriverBookingsResult> => {
+    const bodyText = await wpPost("/wp-json/mastercabs/v1/bookings", { token: data.token }, "Fetch bookings");
+    return JSON.parse(bodyText);
+  });
+
+export const acceptDriverBooking = createServerFn({ method: "POST" })
+  .validator((data: { token: string; booking_id: number }) => {
+    if (!data.token) throw new Error("Token is required");
+    if (!data.booking_id) throw new Error("Booking ID is required");
+    return data;
+  })
+  .handler(async ({ data }): Promise<{ success: boolean; message: string }> => {
+    const bodyText = await wpPost("/wp-json/mastercabs/v1/bookings/accept", data, "Accept booking");
+    return JSON.parse(bodyText);
+  });
