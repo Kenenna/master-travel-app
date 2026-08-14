@@ -189,6 +189,39 @@ export type DriverProfile = {
   member_since: string;
 };
 
+export type DriverBooking = {
+  id: number;
+  booking_reference: string;
+  trip_type: string;
+  pickup_address: string;
+  dropoff_address: string;
+  car_class: string;
+  select_date: string;
+  select_time: string;
+  is_return_trip: string;
+  return_pickup: string | null;
+  return_dropoff: string | null;
+  return_date: string | null;
+  return_time: string | null;
+  booking_for: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  phone_number: string | null;
+  adults: number | null;
+  big_luggage: number | null;
+  small_luggage: number | null;
+  notes: string | null;
+  total_amount: string;
+  is_taken: string;
+  driver_id: number | null;
+  created_at: string;
+};
+
+export type DriverBookingsResult = {
+  bookings: DriverBooking[];
+  current_driver_id: number;
+};
+
 function assertValidRegister(data: unknown): DriverRegisterPayload {
   if (typeof data !== "object" || data === null) {
     throw new Error("Registration payload must be an object");
@@ -294,41 +327,12 @@ export const getDriverProfile = createServerFn({ method: "POST" })
     const bodyText = await wpPost("/wp-json/mastercabs/v1/drivers/me", { token: data.token }, "Fetch profile");
     return JSON.parse(bodyText);
   });
-  
-  
-  export type DriverBooking = {
-  id: number;
-  booking_reference: string;
-  trip_type: string;
-  pickup_address: string;
-  dropoff_address: string;
-  car_class: string;
-  select_date: string;
-  select_time: string;
-  is_return_trip: string;
-  return_pickup: string | null;
-  return_dropoff: string | null;
-  return_date: string | null;
-  return_time: string | null;
-  booking_for: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  phone_number: string | null;
-  adults: number | null;
-  big_luggage: number | null;
-  small_luggage: number | null;
-  notes: string | null;
-  total_amount: string;
-  is_taken: string;
-  driver_id: number | null;
-  created_at: string;
-};
 
-export type DriverBookingsResult = {
-  bookings: DriverBooking[];
-  current_driver_id: number;
-};
-
+// NOTE: these hit /driver-bookings, NOT /bookings — the custom-form plugin
+// already owns POST /mastercabs/v1/bookings for creating a new customer
+// booking, and WordPress silently lets the last-registered REST callback win
+// a route collision. Don't rename these back to /bookings without also
+// checking the WordPress side for conflicts.
 export const getDriverBookings = createServerFn({ method: "POST" })
   .validator((data: { token: string }) => {
     if (!data.token || typeof data.token !== "string") {
@@ -337,7 +341,7 @@ export const getDriverBookings = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }): Promise<DriverBookingsResult> => {
-    const bodyText = await wpPost("/wp-json/mastercabs/v1/bookings", { token: data.token }, "Fetch bookings");
+    const bodyText = await wpPost("/wp-json/mastercabs/v1/driver-bookings", { token: data.token }, "Fetch bookings");
     return JSON.parse(bodyText);
   });
 
@@ -348,6 +352,6 @@ export const acceptDriverBooking = createServerFn({ method: "POST" })
     return data;
   })
   .handler(async ({ data }): Promise<{ success: boolean; message: string }> => {
-    const bodyText = await wpPost("/wp-json/mastercabs/v1/bookings/accept", data, "Accept booking");
+    const bodyText = await wpPost("/wp-json/mastercabs/v1/driver-bookings/accept", data, "Accept booking");
     return JSON.parse(bodyText);
   });
